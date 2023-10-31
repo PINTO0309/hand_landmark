@@ -1453,7 +1453,7 @@ def rotate_and_crop_rectangle(
 
     return rotated_croped_images, rec_size_difference_rotation_angle
 
-def rotate_points(*, points_xy: np.ndarray, degree: float):
+def rotate_points(*, points_xy: np.ndarray, degree: float) -> np.ndarray:
     # 角度をラジアンに変換
     theta = np.radians(degree)
     # 回転行列を作成
@@ -1465,7 +1465,7 @@ def rotate_points(*, points_xy: np.ndarray, degree: float):
     rotated_points: np.ndarray = np.dot(points_xy, rotation_matrix.T)
     return rotated_points
 
-def rotate_points_around_center(*, points_xy: np.ndarray, degree: float, cx: float, cy: float):
+def rotate_points_around_center(*, points_xy: np.ndarray, degree: float, cx: float, cy: float) -> np.ndarray:
     # 角度をラジアンに変換
     theta = np.radians(degree)
     # 回転行列を作成
