@@ -835,7 +835,7 @@ class HandLandmarkDetectionONNX(object):
         lefthand_0_or_righthand_1s: np.ndarray,
         paddings_and_scales: List[PaddingsAndScale],
         rec_size_difference_rotation_angles: List[List[int]]
-    ) -> Tuple[List[Hand], np.ndarray]:
+    ) -> List[Hand]:
         """__postprocess
         検出した手のキーポイント21点を元画像のスケールに戻す
 
