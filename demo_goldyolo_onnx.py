@@ -3,6 +3,7 @@
 import cv2
 import copy
 import math
+import time
 import numpy as np
 import onnxruntime
 from argparse import ArgumentParser
@@ -954,8 +955,8 @@ class HandLandmarkDetectionONNX(object):
 
             hand_info.keypoints = [
                 Point3D(
-                    x=x + hand_info.x1 * image_width - rec_size_difference_rotation_angles[idx][0] / 2, # TODO: 全体画像に対するスケール値に変換する
-                    y=y + hand_info.y1 * image_height - rec_size_difference_rotation_angles[idx][1] / 2, # TODO: 全体画像に対するスケール値に変換する
+                    x=(x + hand_info.x1 * image_width - rec_size_difference_rotation_angles[idx][0] / 2) / image_width,
+                    y=(y + hand_info.y1 * image_height - rec_size_difference_rotation_angles[idx][1] / 2) / image_height,
                     z=None,
                     depth=None,
                 ) for x, y in rotated_xy_x21
@@ -1538,6 +1539,8 @@ def main():
         if not res:
             break
 
+        start_time = time.time()
+
         image = image[..., ::-1] # BGR -> RGB
         inference_image = copy.deepcopy(image)
         debug_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -1592,6 +1595,11 @@ def main():
                 hand_infos=hand_infos,
             )
 
+        elapsed_time = time.time() - start_time
+        fps = 1 / elapsed_time
+        cv2.putText(debug_image, f'{fps:.1f} FPS (inferece + post-process)', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(debug_image, f'{fps:.1f} FPS (inferece + post-process)', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1, cv2.LINE_AA)
+
         # Debug ###############################################################################
         lines_hand = [
             [0,1],[1,2],[2,3],[3,4],
@@ -1611,7 +1619,7 @@ def main():
             debug_keypoints = []
             if hand_info.keypoints is not None:
                 for keypoint in hand_info.keypoints:
-                    debug_keypoints.append([keypoint.x, keypoint.y])
+                    debug_keypoints.append([keypoint.x * image_width, keypoint.y * image_height])
                 debug_hands_keypoints.append(debug_keypoints)
         if len(debug_hands_keypoints) > 0:
             debug_hands_keypoints = np.asarray(debug_hands_keypoints, dtype=np.int32)
