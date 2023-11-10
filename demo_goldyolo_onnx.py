@@ -53,7 +53,7 @@ class Hand():
 class GoldYOLOONNX(object):
     def __init__(
         self,
-        model_path: Optional[str] = 'gold_yolo_n_hand_post_0333_0.4040_1x3x512x896.onnx',
+        model_path: Optional[str] = 'gold_yolo_n_hand_post_0303_0.4172_1x3x480x640.onnx',
         class_score_th: Optional[float] = 0.35,
         providers: Optional[List] = [
             (
@@ -1488,7 +1488,7 @@ def main():
         '-mh',
         '--model_hand',
         type=str,
-        default='gold_yolo_n_hand_post_0333_0.4040_1x3x512x896.onnx',
+        default='gold_yolo_n_hand_post_0303_0.4172_1x3x480x640.onnx',
     )
     parser.add_argument(
         '-mp',
@@ -1534,6 +1534,14 @@ def main():
         frameSize=(w, h),
     )
 
+    lines_hand = [
+        [0,1],[1,2],[2,3],[3,4],
+        [0,5],[5,6],[6,7],[7,8],
+        [5,9],[9,10],[10,11],[11,12],
+        [9,13],[13,14],[14,15],[15,16],
+        [13,17],[17,18],[18,19],[19,20],[0,17],
+    ]
+
     while cap.isOpened():
         res, image = cap.read()
         if not res:
@@ -1577,8 +1585,8 @@ def main():
                 )
             )
             # Debug ###############################################################################
-            cv2.rectangle(debug_image, (x1, y1), (x2, y2), (255,255,255), 2)
-            cv2.rectangle(debug_image, (x1, y1), (x2, y2), (0,0,255), 1)
+            cv2.rectangle(debug_image, (x1, y1), (x2, y2), (255,255,255), 3)
+            cv2.rectangle(debug_image, (x1, y1), (x2, y2), (0,0,255), 2)
             # Debug ###############################################################################
 
         # Palm Detection - 手の回転角計算, hand.palm.degree を計算してセットする
@@ -1587,6 +1595,20 @@ def main():
                 image=image,
                 hand_infos=hand_infos,
             )
+
+        # Debug ###############################################################################
+        for hand_info in hand_infos:
+            if hand_info.palm is not None and hand_info.palm.degree is not None:
+                size = max(abs(hand_info.x2 - hand_info.x1) * image_width, abs(hand_info.y2 - hand_info.y1) * image_height)
+                rect = (
+                    (hand_info.cx * image_width, hand_info.cy * image_height),
+                    (size, size),
+                    hand_info.palm.degree,
+                )
+                box: np.ndarray = cv2.boxPoints(rect)
+                box = box.astype(np.intp)
+                cv2.drawContours(debug_image, [box], 0,(0,120,238), 2, cv2.LINE_AA)
+        # Debug ###############################################################################
 
         # Hand Landmark Detection - 手のキーポイント検出
         hand_infos = \
@@ -1601,14 +1623,6 @@ def main():
         cv2.putText(debug_image, f'{fps:.1f} FPS (inferece + post-process)', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1, cv2.LINE_AA)
 
         # Debug ###############################################################################
-        lines_hand = [
-            [0,1],[1,2],[2,3],[3,4],
-            [0,5],[5,6],[6,7],[7,8],
-            [5,9],[9,10],[10,11],[11,12],
-            [9,13],[13,14],[14,15],[15,16],
-            [13,17],[17,18],[18,19],[19,20],[0,17],
-        ]
-
         thick_coef = debug_image.shape[1] / 400
         radius = int(1 + thick_coef * 2)
 
