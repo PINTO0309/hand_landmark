@@ -10,6 +10,12 @@ from argparse import ArgumentParser
 from typing import Tuple, Optional, List
 from dataclasses import dataclass
 
+RED="\033[31m"
+YELLOW="\033[33m"
+GREEN="\033[32m"
+BLUE="\033[34m"
+RESET="\033[0m"
+
 @dataclass(frozen=False)
 class PaddingsAndScale():
     padding_height: int # 224x224へリサイズするときに足された合計パディング幅（奇数になることがある）
@@ -880,14 +886,13 @@ class HandLandmarkDetectionONNX(object):
         image_width = image.shape[1]
 
         xyz_x21s = xyz_x21s.reshape([-1, 21, 3]) # [N, 65] -> [N, 21, XYZ]
-        xy_x21s = xyz_x21s[..., 0:2] # 奥行き情報Zを捨てる, [N, 21, XYZ] -> [N, 21, XY]
 
         keep = hand_scores[:, 0] > self.class_score_th
         hand_224x224_images = [
             hand_224x224_image \
                 for idx, hand_224x224_image in enumerate(hand_224x224_images) if keep[idx]
         ]
-        xy_x21s = xy_x21s[keep, ...]
+        xyz_x21s = xyz_x21s[keep, ...]
         hand_scores = hand_scores[keep, ...]
         lefthand_0_or_righthand_1s = lefthand_0_or_righthand_1s[keep, ...]
         rec_size_difference_rotation_angles = [
@@ -903,8 +908,8 @@ class HandLandmarkDetectionONNX(object):
                 for kidx, kvalue in enumerate(keep) if kvalue
         ]
 
-        for idx, (hand_224x224_image, kidx, xy_x21, lefthand_0_or_righthand_1, paddings_and_scale) \
-            in enumerate(zip(hand_224x224_images, keeps, xy_x21s, lefthand_0_or_righthand_1s, paddings_and_scales)):
+        for idx, (hand_224x224_image, kidx, xyz_x21, lefthand_0_or_righthand_1, paddings_and_scale) \
+            in enumerate(zip(hand_224x224_images, keeps, xyz_x21s, lefthand_0_or_righthand_1s, paddings_and_scales)):
 
             # 入力画像のスケールに戻す
             #   1. 224x224画像を使用して推論したキーポイントの座標情報は、パディングとスケールが反映された値になっている
@@ -920,10 +925,10 @@ class HandLandmarkDetectionONNX(object):
 
             # 224x224の座標系に対して、224x224へ変更するときに適用したパディングとリサイズの影響を取り除く
             # 座標値は全体画像の座標系ではなく、パディングとリサイズを元に戻した手のひらの部分だけの座標系
-            xy_x21[:, 0] = xy_x21[:, 0] - paddings_and_scale.padding_width // 2
-            xy_x21[:, 0] = xy_x21[:, 0] / paddings_and_scale.scale_width
-            xy_x21[:, 1] = xy_x21[:, 1] - paddings_and_scale.padding_height // 2
-            xy_x21[:, 1] = xy_x21[:, 1] / paddings_and_scale.scale_height
+            xyz_x21[:, 0] = xyz_x21[:, 0] - paddings_and_scale.padding_width // 2
+            xyz_x21[:, 0] = xyz_x21[:, 0] / paddings_and_scale.scale_width
+            xyz_x21[:, 1] = xyz_x21[:, 1] - paddings_and_scale.padding_height // 2
+            xyz_x21[:, 1] = xyz_x21[:, 1] / paddings_and_scale.scale_height
             cx = 112 - paddings_and_scale.padding_width // 2
             cx = cx / paddings_and_scale.scale_width
             cy = 112 - paddings_and_scale.padding_height // 2
@@ -945,22 +950,39 @@ class HandLandmarkDetectionONNX(object):
             temp_image = image_rotation_without_crop(images=[temp_image], angles=[-hand_info.palm.degree])
 
             # パディングとリサイズを元に戻した手のひら画像に対して回転角を元に戻す
-            rotated_xy_x21 = \
-                rotate_points_around_center(
-                    points_xy=xy_x21,
+            rotated_xyz_x21 = \
+                rotate_points_around_center_3d(
+                    points_xyz=xyz_x21,
                     degree=hand_info.palm.degree,
                     cx=temp_image_cx,
                     cy=temp_image_cy,
+                    cz=0.0,
                 )
 
+            # z:
+            #   手首のキーポイントの位置を0.0とした数値 (ほぼ0.0だが0.0よりほんの少し大きい値になる)
+            #   手前方向がマイナス値、奥方向がプラス値
+            #   正規化されていないうえに数値の下限と上限は不明
+            #
+            # output_image_20231114_173009.png 手首z: 0.0001862049102783203, 中指先端z: 45.90625
+            # output_image_20231114_173017.png 手首z: 0.00020122528076171875, 中指先端z: 61.59375
+            # output_image_20231114_173022.png 首z: 0.0001690387725830078, 中指先端z: 1.0263671875
+            # output_image_20231114_173026.png 手首z: 0.00021648406982421875, 中指先端z: -73.5625
+            # output_image_20231114_173031.png 手首z: 0.0002181529998779297, 中指先端z: -65.8125
+            # output_image_20231114_174046.png 手首z: 0.0002727508544921875, 中指先端z: -79.875
+            # output_image_20231114_174311.png 手首z: 0.00013566017150878906, 中指先端z: 63.75
             hand_info.keypoints = [
                 Point3D(
                     x=(x + hand_info.x1 * image_width - rec_size_difference_rotation_angles[idx][0] / 2) / image_width,
                     y=(y + hand_info.y1 * image_height - rec_size_difference_rotation_angles[idx][1] / 2) / image_height,
-                    z=None,
+                    z=z,
                     depth=None,
-                ) for x, y in rotated_xy_x21
+                ) for x, y, z in rotated_xyz_x21
             ]
+
+        # debug
+        if len(hand_infos) > 0 and hand_infos[0].keypoints is not None and len(hand_infos[0].keypoints) > 0:
+            print(f'{GREEN}手首z:{RESET} {hand_infos[0].keypoints[0].z}, {YELLOW}中指先端z:{RESET} {hand_infos[0].keypoints[12].z}')
 
         # 元画像スケールの手のひら位置情報
         return hand_infos
@@ -1481,6 +1503,24 @@ def rotate_points_around_center(*, points_xy: np.ndarray, degree: float, cx: flo
     rotated_points: np.ndarray = rotated_translated + np.array([cx, cy])
     return rotated_points
 
+def rotate_points_around_center_3d(*, points_xyz: np.ndarray, degree: float, cx: float, cy: float, cz: float) -> np.ndarray:
+    # 角度をラジアンに変換
+    theta = np.radians(degree)
+
+    # Z軸周りの3次元回転行列を作成
+    rotation_matrix = np.array([
+        [np.cos(theta), -np.sin(theta), 0],
+        [np.sin(theta), np.cos(theta), 0],
+        [0, 0, 1]
+    ])
+    # 中心点を原点に移動
+    xyz_translated = points_xyz - np.array([cx, cy, cz])
+    # 移動した点を回転
+    rotated_translated = np.dot(xyz_translated, rotation_matrix.T)
+    # 回転後の点を元の位置に戻す
+    rotated_points: np.ndarray  = rotated_translated + np.array([cx, cy, cz])
+    return rotated_points
+
 
 def main():
     parser = ArgumentParser()
@@ -1652,7 +1692,7 @@ def main():
                 ]
 
         cv2.imshow(f'landmark', debug_image)
-        key = cv2.waitKey(1)
+        key = cv2.waitKey(1) if is_parsable_to_int(args.video) else cv2.waitKey(0)
         if key == 27: # ESC
             break
         video_writer.write(debug_image)
