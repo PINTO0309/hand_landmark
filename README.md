@@ -1,5 +1,7 @@
 # hand_landmark
 
+HandLandmark Detection that can be performed only in onnxruntime. Pre-focusing by skeletal detection is not performed. This does not use MediaPipe.
+
 https://github.com/PINTO0309/PINTO_model_zoo
 
 - onnx
